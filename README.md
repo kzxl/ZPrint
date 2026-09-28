@@ -75,10 +75,36 @@ Options:
 - `--port <port>`: Custom TCP port (default `9200`).
 - `--ipp <port>`: Custom IPP port for AirPrint / driverless printing (default `6310`).
 - `--printer <name>`: Target local printer name (defaults to Windows default printer).
+- `--background`, `-b`: Runs completely in the background (hides console window on Windows; logs to `%LOCALAPPDATA%\ZPrint\zprint-server.log`).
 - `--no-ipp`: Disable IPP server.
 - `--no-discovery`: Disable UDP LAN auto-discovery.
 
-### B. Client: Drag & Drop / CLI Printing (Option 2)
+### B. Background Execution & Auto-Start on System Boot
+
+ZPrint supports two zero-dependency persistence modes:
+
+#### 1. User Login Autostart (No Admin Privileges Required)
+Launches ZPrint silently in the background whenever the current user logs in:
+```bash
+zprint autostart enable --printer "Canon LBP2900"
+zprint autostart status
+zprint autostart disable
+```
+*Platform implementation: Windows Registry Run key `HKCU\...\Run` | Linux `~/.config/autostart/zprint.desktop` | macOS `LaunchAgents`.*
+
+#### 2. System Boot Service (Runs at Windows Boot under SYSTEM)
+Starts automatically when the PC powers on, even before any user logs in:
+```bash
+# Must be executed from an elevated terminal (Run as Administrator / sudo)
+zprint service install --printer "Canon LBP2900"
+zprint service start
+zprint service status
+zprint service stop
+zprint service uninstall
+```
+*Platform implementation: Windows Task Scheduler (`schtasks /sc onstart /ru SYSTEM /rl HIGHEST`) | Linux systemd unit (`/etc/systemd/system/zprint.service`).*
+
+### C. Client: Drag & Drop / CLI Printing (Option 2)
 Drag and drop any file directly onto `zprint.exe`, or run from terminal:
 ```bash
 zprint print document.pdf --pages "1, 3, 5-8" --copies 2

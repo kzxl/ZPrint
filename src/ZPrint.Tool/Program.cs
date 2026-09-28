@@ -61,6 +61,13 @@ namespace ZPrint.Tool
                 case "setup":
                     return ExecuteInstallPrinterGuide(args);
 
+                case "autostart":
+                case "startup":
+                    return ExecuteAutostart(args);
+
+                case "service":
+                    return ExecuteService(args);
+
                 case "help":
                 case "h":
                 case "?":
@@ -79,7 +86,8 @@ namespace ZPrint.Tool
 
         private static bool IsKnownCommand(string cmd)
         {
-            return cmd is "server" or "serve" or "s" or "print" or "p" or "list" or "discover" or "l" or "install-printer" or "setup" or "help" or "h";
+            return cmd is "server" or "serve" or "s" or "print" or "p" or "list" or "discover" or "l" 
+                       or "install-printer" or "setup" or "autostart" or "startup" or "service" or "help" or "h";
         }
 
         #region Server Command
@@ -93,6 +101,7 @@ namespace ZPrint.Tool
             string? targetPrinter = null;
             bool enableIpp = true;
             bool enableDiscovery = true;
+            bool background = false;
 
             for (int i = 1; i < args.Length; i++)
             {
@@ -117,6 +126,17 @@ namespace ZPrint.Tool
                 {
                     enableDiscovery = false;
                 }
+                else if (arg.Equals("--background", StringComparison.OrdinalIgnoreCase) || arg.Equals("-b", StringComparison.OrdinalIgnoreCase))
+                {
+                    background = true;
+                }
+            }
+
+            if (background)
+            {
+                StartupManager.HideConsole();
+                Log("[BACKGROUND] ZPrint Server running in hidden background mode.", ConsoleColor.Cyan);
+                Log($"[BACKGROUND] Persistent log written to: {StartupManager.GetLogFilePath()}", ConsoleColor.DarkGray);
             }
 
             IPrinterSpooler spooler;
@@ -609,7 +629,113 @@ namespace ZPrint.Tool
 
         #endregion
 
+        #region Autostart & Service Commands
+
+        private static int ExecuteAutostart(string[] args)
+        {
+            PrintBanner();
+            string subCmd = args.Length > 1 ? args[1].ToLowerInvariant() : "status";
+            string extraArgs = string.Join(" ", args.Skip(2));
+
+            switch (subCmd)
+            {
+                case "enable":
+                case "on":
+                    var (ok, msg) = StartupManager.EnableAutostart(extraArgs);
+                    Console.ForegroundColor = ok ? ConsoleColor.Green : ConsoleColor.Red;
+                    Console.WriteLine($"{(ok ? "[SUCCESS]" : "[ERROR]")} {msg}");
+                    Console.ResetColor();
+                    return ok ? 0 : 1;
+
+                case "disable":
+                case "off":
+                    var (disOk, disMsg) = StartupManager.DisableAutostart();
+                    Console.ForegroundColor = disOk ? ConsoleColor.Green : ConsoleColor.Red;
+                    Console.WriteLine($"{(disOk ? "[SUCCESS]" : "[ERROR]")} {disMsg}");
+                    Console.ResetColor();
+                    return disOk ? 0 : 1;
+
+                case "status":
+                default:
+                    var (enabled, details) = StartupManager.GetAutostartStatus();
+                    Console.ForegroundColor = enabled ? ConsoleColor.Green : ConsoleColor.Yellow;
+                    Console.WriteLine($"User Login Autostart: {(enabled ? "ENABLED" : "DISABLED")}");
+                    Console.ResetColor();
+                    Console.WriteLine($"Details: {details}\n");
+                    return 0;
+            }
+        }
+
+        private static int ExecuteService(string[] args)
+        {
+            PrintBanner();
+            string subCmd = args.Length > 1 ? args[1].ToLowerInvariant() : "status";
+            string extraArgs = string.Join(" ", args.Skip(2));
+
+            switch (subCmd)
+            {
+                case "install":
+                    var (instOk, instMsg) = StartupManager.InstallSystemService(extraArgs);
+                    Console.ForegroundColor = instOk ? ConsoleColor.Green : ConsoleColor.Red;
+                    Console.WriteLine($"{(instOk ? "[SUCCESS]" : "[ERROR]")} {instMsg}");
+                    Console.ResetColor();
+                    return instOk ? 0 : 1;
+
+                case "uninstall":
+                case "remove":
+                    var (unOk, unMsg) = StartupManager.UninstallSystemService();
+                    Console.ForegroundColor = unOk ? ConsoleColor.Green : ConsoleColor.Red;
+                    Console.WriteLine($"{(unOk ? "[SUCCESS]" : "[ERROR]")} {unMsg}");
+                    Console.ResetColor();
+                    return unOk ? 0 : 1;
+
+                case "start":
+                    var (stOk, stMsg) = StartupManager.StartSystemService();
+                    Console.ForegroundColor = stOk ? ConsoleColor.Green : ConsoleColor.Red;
+                    Console.WriteLine($"{(stOk ? "[SUCCESS]" : "[ERROR]")} {stMsg}");
+                    Console.ResetColor();
+                    return stOk ? 0 : 1;
+
+                case "stop":
+                    var (spOk, spMsg) = StartupManager.StopSystemService();
+                    Console.ForegroundColor = spOk ? ConsoleColor.Green : ConsoleColor.Red;
+                    Console.WriteLine($"{(spOk ? "[SUCCESS]" : "[ERROR]")} {spMsg}");
+                    Console.ResetColor();
+                    return spOk ? 0 : 1;
+
+                case "status":
+                default:
+                    var (installed, details) = StartupManager.GetSystemServiceStatus();
+                    Console.ForegroundColor = installed ? ConsoleColor.Green : ConsoleColor.Yellow;
+                    Console.WriteLine($"System Boot Service: {(installed ? "INSTALLED" : "NOT INSTALLED")}");
+                    Console.ResetColor();
+                    Console.WriteLine($"Details:\n{details}\n");
+                    return 0;
+            }
+        }
+
+        #endregion
+
         #region Helpers
+
+        private static readonly object _logLock = new object();
+
+        private static void Log(string message, ConsoleColor? color = null)
+        {
+            if (color.HasValue) Console.ForegroundColor = color.Value;
+            Console.WriteLine(message);
+            if (color.HasValue) Console.ResetColor();
+
+            try
+            {
+                lock (_logLock)
+                {
+                    string line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
+                    File.AppendAllText(StartupManager.GetLogFilePath(), line);
+                }
+            }
+            catch { }
+        }
 
         private static void PrintBanner()
         {
@@ -632,7 +758,7 @@ namespace ZPrint.Tool
             Console.WriteLine();
             Console.WriteLine("Commands:");
             Console.WriteLine("  server           Starts host print server (TCP + IPP + UDP discovery)");
-            Console.WriteLine("                   Options: --port <9200> --ipp <6310> --printer <name> [--no-ipp]");
+            Console.WriteLine("                   Options: --port <9200> --ipp <6310> --printer <name> [--background] [--no-ipp]");
             Console.WriteLine();
             Console.WriteLine("  print <file>     Submits a document file to remote printer");
             Console.WriteLine("                   Options: --server <ip[:port]> --printer <name> --pages <range> --copies <n>");
@@ -640,11 +766,20 @@ namespace ZPrint.Tool
             Console.WriteLine();
             Console.WriteLine("  list             Scans and lists active ZPrint servers and shared printers on LAN");
             Console.WriteLine();
+            Console.WriteLine("  autostart        Manages user desktop login autostart (no admin required)");
+            Console.WriteLine("                   Usage: zprint autostart [enable|disable|status] [--printer <name>]");
+            Console.WriteLine();
+            Console.WriteLine("  service          Manages system boot background service (SYSTEM privileges)");
+            Console.WriteLine("                   Usage: zprint service [install|uninstall|start|stop|status] [--printer <name>]");
+            Console.WriteLine();
             Console.WriteLine("  install-printer  Displays setup instructions for driverless virtual printer");
             Console.WriteLine("                   Options: --server <ip> --port <6310>");
             Console.WriteLine();
             Console.WriteLine("Examples:");
             Console.WriteLine("  zprint server --printer \"Canon LBP2900\"");
+            Console.WriteLine("  zprint server --background");
+            Console.WriteLine("  zprint autostart enable --printer \"Canon LBP2900\"");
+            Console.WriteLine("  zprint service install --printer \"Canon LBP2900\"");
             Console.WriteLine("  zprint print contract.pdf --pages \"1, 3, 5-8\" --copies 2");
             Console.WriteLine("  zprint list");
             Console.WriteLine();
