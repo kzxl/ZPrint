@@ -10,5 +10,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ZPrint.Core\ZPrint.Core.csproj" />
+    <ProjectReference Include="..\..\..\..\ZeroPlatform\ZeroSystem\src\ZeroSystem.Core\ZeroSystem.Core.csproj" />
   </ItemGroup>
 </Project>

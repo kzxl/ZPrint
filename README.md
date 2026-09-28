@@ -128,6 +128,24 @@ Run `zprint install-printer` to view OS-specific connection commands.
 - **macOS**: Add IP printer with protocol **IPP (Internet Printing Protocol)** at `<server-ip>:6310` with queue `/ipp/`.
 - **Linux**: `lpadmin -p ZPrint -E -v ipp://<server-ip>:6310/ipp/ -m everywhere`.
 
+### E. Automatic Updates (Integrated ZUpdate)
+ZPrint integrates seamlessly with ZeroUniverse's `ZUpdate` engine for atomic in-place updates:
+```bash
+# Check if a new release is available
+zprint update --check
+
+# Download package and perform atomic in-place upgrade via ZUpdate
+zprint update
+
+# Force download and reinstall current or newer version
+zprint update --force
+```
+Options:
+- `--check`: Query GitHub Releases without downloading or replacing binaries.
+- `--force`: Force download and reinstall even if already on the latest release.
+- `--silent`: Suppress user confirmation prompts during update execution.
+
+
 ---
 
 ## 4. Building & Testing

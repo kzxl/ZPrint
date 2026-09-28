@@ -15,6 +15,7 @@ using ZPrint.Core.Network;
 using ZPrint.Core.Queue;
 using ZPrint.Core.Spooler;
 using ZPrint.Core.Utils;
+using ZeroSystem;
 
 namespace ZPrint.Tool
 {
@@ -68,6 +69,11 @@ namespace ZPrint.Tool
                 case "service":
                     return ExecuteService(args);
 
+                case "update":
+                case "check-update":
+                case "upgrade":
+                    return await ExecuteUpdateAsync(args);
+
                 case "help":
                 case "h":
                 case "?":
@@ -87,7 +93,8 @@ namespace ZPrint.Tool
         private static bool IsKnownCommand(string cmd)
         {
             return cmd is "server" or "serve" or "s" or "print" or "p" or "list" or "discover" or "l" 
-                       or "install-printer" or "setup" or "autostart" or "startup" or "service" or "help" or "h";
+                       or "install-printer" or "setup" or "autostart" or "startup" or "service" 
+                       or "update" or "check-update" or "upgrade" or "help" or "h";
         }
 
         #region Server Command
@@ -134,9 +141,9 @@ namespace ZPrint.Tool
 
             if (background)
             {
-                StartupManager.HideConsole();
+                StartupManager.HideConsoleWindow();
                 Log("[BACKGROUND] ZPrint Server running in hidden background mode.", ConsoleColor.Cyan);
-                Log($"[BACKGROUND] Persistent log written to: {StartupManager.GetLogFilePath()}", ConsoleColor.DarkGray);
+                Log($"[BACKGROUND] Persistent log written to: {StartupManager.GetDefaultLogPath("ZPrint", "zprint-server.log")}", ConsoleColor.DarkGray);
             }
 
             IPrinterSpooler spooler;
@@ -641,7 +648,8 @@ namespace ZPrint.Tool
             {
                 case "enable":
                 case "on":
-                    var (ok, msg) = StartupManager.EnableAutostart(extraArgs);
+                    string startupArgs = $"server --background {extraArgs}".Trim();
+                    var (ok, msg) = StartupManager.Register("ZPrint", arguments: startupArgs, scope: StartupScope.UserLogin);
                     Console.ForegroundColor = ok ? ConsoleColor.Green : ConsoleColor.Red;
                     Console.WriteLine($"{(ok ? "[SUCCESS]" : "[ERROR]")} {msg}");
                     Console.ResetColor();
@@ -649,7 +657,7 @@ namespace ZPrint.Tool
 
                 case "disable":
                 case "off":
-                    var (disOk, disMsg) = StartupManager.DisableAutostart();
+                    var (disOk, disMsg) = StartupManager.Unregister("ZPrint", StartupScope.UserLogin);
                     Console.ForegroundColor = disOk ? ConsoleColor.Green : ConsoleColor.Red;
                     Console.WriteLine($"{(disOk ? "[SUCCESS]" : "[ERROR]")} {disMsg}");
                     Console.ResetColor();
@@ -657,11 +665,11 @@ namespace ZPrint.Tool
 
                 case "status":
                 default:
-                    var (enabled, details) = StartupManager.GetAutostartStatus();
-                    Console.ForegroundColor = enabled ? ConsoleColor.Green : ConsoleColor.Yellow;
-                    Console.WriteLine($"User Login Autostart: {(enabled ? "ENABLED" : "DISABLED")}");
+                    var status = StartupManager.GetStatus("ZPrint", StartupScope.UserLogin);
+                    Console.ForegroundColor = status.IsEnabled ? ConsoleColor.Green : ConsoleColor.Yellow;
+                    Console.WriteLine($"User Login Autostart: {(status.IsEnabled ? "ENABLED" : "DISABLED")}");
                     Console.ResetColor();
-                    Console.WriteLine($"Details: {details}\n");
+                    Console.WriteLine($"Details: {status.Details}\n");
                     return 0;
             }
         }
@@ -675,7 +683,8 @@ namespace ZPrint.Tool
             switch (subCmd)
             {
                 case "install":
-                    var (instOk, instMsg) = StartupManager.InstallSystemService(extraArgs);
+                    string svcArgs = $"server --background {extraArgs}".Trim();
+                    var (instOk, instMsg) = StartupManager.Register("ZPrintServer", arguments: svcArgs, scope: StartupScope.SystemBoot);
                     Console.ForegroundColor = instOk ? ConsoleColor.Green : ConsoleColor.Red;
                     Console.WriteLine($"{(instOk ? "[SUCCESS]" : "[ERROR]")} {instMsg}");
                     Console.ResetColor();
@@ -683,21 +692,21 @@ namespace ZPrint.Tool
 
                 case "uninstall":
                 case "remove":
-                    var (unOk, unMsg) = StartupManager.UninstallSystemService();
+                    var (unOk, unMsg) = StartupManager.Unregister("ZPrintServer", StartupScope.SystemBoot);
                     Console.ForegroundColor = unOk ? ConsoleColor.Green : ConsoleColor.Red;
                     Console.WriteLine($"{(unOk ? "[SUCCESS]" : "[ERROR]")} {unMsg}");
                     Console.ResetColor();
                     return unOk ? 0 : 1;
 
                 case "start":
-                    var (stOk, stMsg) = StartupManager.StartSystemService();
+                    var (stOk, stMsg) = StartupManager.StartSystemService("ZPrintServer");
                     Console.ForegroundColor = stOk ? ConsoleColor.Green : ConsoleColor.Red;
                     Console.WriteLine($"{(stOk ? "[SUCCESS]" : "[ERROR]")} {stMsg}");
                     Console.ResetColor();
                     return stOk ? 0 : 1;
 
                 case "stop":
-                    var (spOk, spMsg) = StartupManager.StopSystemService();
+                    var (spOk, spMsg) = StartupManager.StopSystemService("ZPrintServer", "zprint.exe");
                     Console.ForegroundColor = spOk ? ConsoleColor.Green : ConsoleColor.Red;
                     Console.WriteLine($"{(spOk ? "[SUCCESS]" : "[ERROR]")} {spMsg}");
                     Console.ResetColor();
@@ -705,13 +714,131 @@ namespace ZPrint.Tool
 
                 case "status":
                 default:
-                    var (installed, details) = StartupManager.GetSystemServiceStatus();
-                    Console.ForegroundColor = installed ? ConsoleColor.Green : ConsoleColor.Yellow;
-                    Console.WriteLine($"System Boot Service: {(installed ? "INSTALLED" : "NOT INSTALLED")}");
+                    var svcStatus = StartupManager.GetStatus("ZPrintServer", StartupScope.SystemBoot);
+                    Console.ForegroundColor = svcStatus.IsEnabled ? ConsoleColor.Green : ConsoleColor.Yellow;
+                    Console.WriteLine($"System Boot Service: {(svcStatus.IsEnabled ? "INSTALLED" : "NOT INSTALLED")}");
                     Console.ResetColor();
-                    Console.WriteLine($"Details:\n{details}\n");
+                    Console.WriteLine($"Details:\n{svcStatus.Details}\n");
                     return 0;
             }
+        }
+
+        #endregion
+
+        #region Update Command
+
+        private static async Task<int> ExecuteUpdateAsync(string[] args)
+        {
+            PrintBanner();
+            bool checkOnly = false;
+            bool force = false;
+            bool silent = false;
+
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i].ToLowerInvariant();
+                if (a is "--check" or "-c") checkOnly = true;
+                else if (a is "--force" or "-f") force = true;
+                else if (a is "--silent" or "-s") silent = true;
+            }
+
+            Console.WriteLine($"[UPDATE] Current version: v{Version}");
+            Console.WriteLine("[UPDATE] Checking GitHub Releases for updates (repo: kzxl/ZPrint)...");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var updateInfo = await ZPrintUpdater.CheckForUpdatesAsync(Version, cancellationToken: cts.Token);
+
+            if (!string.IsNullOrEmpty(updateInfo.ErrorMessage))
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"[WARN] Could not query remote updates: {updateInfo.ErrorMessage}");
+                Console.ResetColor();
+                return 0;
+            }
+
+            if (!updateInfo.HasUpdate && !force)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"[UPDATE] ZPrint is up-to-date! (Latest: v{updateInfo.LatestVersion})");
+                Console.ResetColor();
+                return 0;
+            }
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"[UPDATE] New version available: v{updateInfo.LatestVersion} (Current: v{Version})");
+            Console.ResetColor();
+
+            if (!string.IsNullOrWhiteSpace(updateInfo.ReleaseNotes))
+            {
+                Console.WriteLine();
+                Console.WriteLine("--- Release Notes ---");
+                Console.WriteLine(updateInfo.ReleaseNotes.Trim());
+                Console.WriteLine("---------------------");
+                Console.WriteLine();
+            }
+
+            if (checkOnly)
+            {
+                return 0;
+            }
+
+            if (string.IsNullOrEmpty(updateInfo.DownloadUrl))
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("[WARN] No downloadable ZIP asset found for this release.");
+                if (!string.IsNullOrEmpty(updateInfo.HtmlUrl))
+                {
+                    Console.WriteLine($"Please download manually from: {updateInfo.HtmlUrl}");
+                }
+                Console.ResetColor();
+                return 1;
+            }
+
+            string tempZip = Path.Combine(Path.GetTempPath(), $"ZPrint_v{updateInfo.LatestVersion}.zip");
+            Console.WriteLine($"[DOWNLOAD] Downloading package from: {updateInfo.DownloadUrl}");
+
+            var progress = new Progress<int>(pct =>
+            {
+                Console.Write($"\r[DOWNLOAD] Progress: {pct}%   ");
+            });
+
+            try
+            {
+                await ZPrintUpdater.DownloadPackageAsync(updateInfo.DownloadUrl, tempZip, progress, cts.Token);
+                Console.WriteLine("\n[DOWNLOAD] Download complete!");
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"\n[ERROR] Download failed: {ex.Message}");
+                Console.ResetColor();
+                return 1;
+            }
+
+            string? zUpdatePath = ZPrintUpdater.LocateZUpdateExecutable();
+            if (string.IsNullOrEmpty(zUpdatePath))
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"[WARN] ZUpdate.exe engine was not detected automatically.");
+                Console.WriteLine($"Downloaded package is available at: {tempZip}");
+                Console.ResetColor();
+                return 0;
+            }
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"[ZUPDATE] Launching ZUpdate engine hand-off: {zUpdatePath}");
+            Console.ResetColor();
+
+            bool handedOff = ZPrintUpdater.HandOffToZUpdate(tempZip, updateInfo.LatestVersion, silent: silent);
+            if (!handedOff)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("[ERROR] Failed to start ZUpdate.exe process.");
+                Console.ResetColor();
+                return 1;
+            }
+
+            return 0;
         }
 
         #endregion
@@ -731,7 +858,7 @@ namespace ZPrint.Tool
                 lock (_logLock)
                 {
                     string line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
-                    File.AppendAllText(StartupManager.GetLogFilePath(), line);
+                    File.AppendAllText(StartupManager.GetDefaultLogPath("ZPrint", "zprint-server.log"), line);
                 }
             }
             catch { }
@@ -772,6 +899,9 @@ namespace ZPrint.Tool
             Console.WriteLine("  service          Manages system boot background service (SYSTEM privileges)");
             Console.WriteLine("                   Usage: zprint service [install|uninstall|start|stop|status] [--printer <name>]");
             Console.WriteLine();
+            Console.WriteLine("  update           Checks for new releases and performs auto-upgrade via ZUpdate");
+            Console.WriteLine("                   Options: [--check] [--force] [--silent]");
+            Console.WriteLine();
             Console.WriteLine("  install-printer  Displays setup instructions for driverless virtual printer");
             Console.WriteLine("                   Options: --server <ip> --port <6310>");
             Console.WriteLine();
@@ -780,6 +910,7 @@ namespace ZPrint.Tool
             Console.WriteLine("  zprint server --background");
             Console.WriteLine("  zprint autostart enable --printer \"Canon LBP2900\"");
             Console.WriteLine("  zprint service install --printer \"Canon LBP2900\"");
+            Console.WriteLine("  zprint update --check");
             Console.WriteLine("  zprint print contract.pdf --pages \"1, 3, 5-8\" --copies 2");
             Console.WriteLine("  zprint list");
             Console.WriteLine();
