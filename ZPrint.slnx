@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ZPrint.Core/ZPrint.Core.csproj" />
+    <Project Path="src/ZPrint.Tool/ZPrint.Tool.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ZPrint.Tests/ZPrint.Tests.csproj" />
+  </Folder>
+</Solution>

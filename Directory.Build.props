@@ -1,0 +1,24 @@
+<Project>
+
+  <!--
+    Shared build settings applied to every project in ZPrint repository.
+  -->
+  <PropertyGroup>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+
+    <Company>ZeroUniverse</Company>
+    <Copyright>Copyright (c) 2026 ZeroUniverse</Copyright>
+    <PackageProjectUrl>https://github.com/kzxl/ZPrint</PackageProjectUrl>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+</Project>
